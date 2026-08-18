@@ -4,13 +4,17 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/tes20545/golang_lab/internal/core/domain"
 	"github.com/tes20545/golang_lab/internal/core/port"
 )
 
+// CreatePaymentRequest is the HTTP contract for creating a deposit payment.
+// Amount is expressed in the currency's minor unit (Stripe/Omise style),
+// e.g. 100 = 1.00 THB.
 type CreatePaymentRequest struct {
-	UserId   string  `json:"user_id"`
-	Amount   float64 `json:"amount"`
-	Currency string  `json:"currency"`
+	UserID   string       `json:"user_id"`
+	Amount   domain.Money `json:"amount"`
+	Currency string       `json:"currency"`
 }
 
 type PaymentHandler struct {
@@ -21,32 +25,21 @@ func NewPaymentHandler(paymentService port.PaymentService) *PaymentHandler {
 	return &PaymentHandler{paymentService: paymentService}
 }
 
-// ------ Handler core ------ //
-
+// HandleCreatePayment decodes the request, validates it through the core
+// (NewPayment) and returns the created payment.
 func (h *PaymentHandler) HandleCreatePayment(w http.ResponseWriter, r *http.Request) {
 	var req CreatePaymentRequest
 
-	//Decode http req.
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, err)
-	}
-
-	payment, err := h.paymentService.ProcessPayment(r.Context(), req.UserId, req.Amount, req.Currency)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, err)
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	// Success
+	payment, err := h.paymentService.ProcessPayment(r.Context(), req.UserID, req.Amount, req.Currency)
+	if err != nil {
+		respondError(w, err)
+		return
+	}
+
 	respondJSON(w, http.StatusOK, payment)
-}
-
-// ------ Handler Helper ------ //
-
-func (h *PaymentHandler) responseJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	//encode to json
-	json.NewEncoder(w).Encode(data)
 }
