@@ -1,8 +1,9 @@
 package main
 
 import (
-	"fmt"
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/tes20545/golang_lab/internal/adapter/gateway/stripe"
@@ -12,22 +13,22 @@ import (
 )
 
 func main() {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	// Infrastructure
-	paymentRepo := postgres.NewPaymentRepository()
-	stripeGateway := stripe.NewStripeGateway("sk_test_128472t48329")
+	// Infrastructure (driven adapters)
+	paymentRepo := postgres.NewPaymentRepository(logger)
+	stripeGateway := stripe.NewStripeGateway("sk_test_128472t48329", logger)
 
-	// Business Logic
-	paymentService := services.NewPaymentService(paymentRepo, stripeGateway)
+	// Business Logic (core)
+	paymentService := services.NewPaymentService(paymentRepo, stripeGateway, logger)
 
-	// Transport Layer
+	// Transport Layer (driving adapter)
 	paymentHandler := httphandler.NewPaymentHandler(paymentService)
 
 	// Router
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/v1/payments", paymentHandler.HandleCreatePayment)
 
-	// Config
 	server := &http.Server{
 		Addr:              ":8080",
 		Handler:           mux,
@@ -35,8 +36,9 @@ func main() {
 		WriteTimeout:      10 * time.Second,
 	}
 
-	fmt.Println("Payment Service standard http server is running on :8080")
-	if err := server.ListenAndServe(); err != nil {
-		fmt.Printf("Server failed: %s\n", err)
+	logger.Info("payment service started", "addr", ":8080")
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Error("server failed", "error", err)
+		os.Exit(1)
 	}
 }
